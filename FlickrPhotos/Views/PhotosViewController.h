@@ -10,6 +10,8 @@
 #import "FlickrProtocol.h"
 
 
-@interface PhotosViewController : UIViewController <UITableViewDataSource , UITableViewDelegate , FlickrProtocol , UISearchBarDelegate>
+@interface PhotosViewController : UIViewController <UITableViewDataSource , UITableViewDelegate , FlickrProtocol , UISearchBarDelegate , UISearchControllerDelegate , UISearchResultsUpdating>
+
+@property (strong, nonatomic) UISearchController *searchController;
 
 @end

@@ -18,16 +18,14 @@
 @interface PhotosViewController ()
 
 @property (weak, nonatomic) IBOutlet UITableView *tableView;
-@property (weak, nonatomic) IBOutlet UISearchBar *searchBar;
-@property BOOL searchActive;
-@property BOOL resetSearch;
+@property BOOL resetFilteredPhotos;
 @property NSString* searchText;
-
 
 @end
 
 @implementation PhotosViewController
 
+@synthesize searchController;
 NSMutableArray *flickrPhotos;
 NSMutableArray * filteredPhotos;
 
@@ -40,6 +38,11 @@ NSMutableArray * filteredPhotos;
     
 }
 
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self.searchController dismissViewControllerAnimated:NO completion:nil];
+}
+
 // MARK:- Helper Methods
 
 - (void)setupUI {
@@ -47,23 +50,34 @@ NSMutableArray * filteredPhotos;
     flickrPhotos = [[NSMutableArray alloc] init];
     filteredPhotos = [[NSMutableArray alloc] init];
     self.navigationItem.title = @"Flicker Photos";
-
+    
+    // add and setupt UISearchController
+    self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+    self.searchController.searchResultsUpdater = self;
+    self.searchController.dimsBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.delegate = self;
+    self.tableView.tableHeaderView = self.searchController.searchBar;
+    self.definesPresentationContext = YES;
+    [self.searchController.searchBar sizeToFit];
 }
 
 - (void)sendSearchRequest {
-    if( [self.searchText length]  == 0 ) {
-        self.searchActive = NO;
-    }else{
-        
+    if( [self isFiltering] ) {
         // stop current recent photos fetchings
         [FlickrManager.sharedManager stopFetchingAndDownload];
         // start fetching for specific search text
         [FlickrManager.sharedManager fetchPhotosForSearchWith:self.searchText];
-        self.searchActive = YES;
     }
-    
-    // search on searchText
-    [self.tableView reloadData];
+}
+
+
+- (BOOL) isFiltering {
+    return searchController.isActive &&  [self searchBarIsEmpty] == NO ;
+}
+
+- (BOOL) searchBarIsEmpty {
+    // Returns YES if the text is empty or nil
+    return [self.searchController.searchBar.text length] == 0 ;
 }
 
 // MARK:- UITableViewDataSource
@@ -73,7 +87,7 @@ NSMutableArray * filteredPhotos;
 }
 
 - (NSInteger)tableView:(nonnull UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if(self.searchActive) {
+    if( [self isFiltering] ) {
         return [filteredPhotos count];
     }
      return [flickrPhotos count];
@@ -92,7 +106,7 @@ NSMutableArray * filteredPhotos;
         cell = [[FlickrPhotoCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellIdentifier];
     }
     
-    Photo* currentPhoto =  (self.searchActive) ? [filteredPhotos objectAtIndex:indexPath.row] : [flickrPhotos objectAtIndex:indexPath.row];
+    Photo* currentPhoto =  ([self isFiltering]) ? [filteredPhotos objectAtIndex:indexPath.row] : [flickrPhotos objectAtIndex:indexPath.row];
     
    
     [cell.flickerImage sd_setImageWithURL:currentPhoto.url];
@@ -125,7 +139,7 @@ NSMutableArray * filteredPhotos;
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
     [tableView deselectRowAtIndexPath:indexPath animated:NO];
     
-    Photo* selectedPhoto =  (self.searchActive) ? [filteredPhotos objectAtIndex:indexPath.row] : [flickrPhotos objectAtIndex:indexPath.row];
+    Photo* selectedPhoto =  ([self isFiltering]) ? [filteredPhotos objectAtIndex:indexPath.row] : [flickrPhotos objectAtIndex:indexPath.row];
     // get cached image if exists
     NSString *key = [[SDWebImageManager sharedManager] cacheKeyForURL:selectedPhoto.url];
     UIImage *cachedImage = [[SDImageCache sharedImageCache] imageFromCacheForKey:key];
@@ -140,7 +154,7 @@ NSMutableArray * filteredPhotos;
 
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
     // At the bottom...
-    if (self.searchActive) {
+    if ([self isFiltering]) {
         if (indexPath.row == filteredPhotos.count -1 ) {
             [self sendSearchRequest];
         }
@@ -153,31 +167,25 @@ NSMutableArray * filteredPhotos;
 
 // MARK:- UISearchBarDelegate
 
-- (void)searchBarCancelButtonClicked:(UISearchBar *)searchBar {
-     self.searchActive = NO;
-}
-
-- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
-    NSLog(@"current search text : %@", searchBar.text);
-    if( [searchBar.text length]  == 0 || [[searchBar.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] == 0  ) {
-        self.searchActive = NO;
-    }else{
-        // stop current recent photos fetchings
-        [FlickrManager.sharedManager stopFetchingAndDownload];
-        // start fetching for specific search text
-        [FlickrManager.sharedManager fetchPhotosForSearchWith:searchBar.text];
-        self.searchActive = YES;
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    
+    NSString *searchText = searchController.searchBar.text;
+    if (searchText) {
+        
+        if (searchText.length != 0) {
+            self.searchText = searchText;
+            self.resetFilteredPhotos = YES;
+            // to limit network activity, reload a second after last key press.
+            [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(sendSearchRequest) object:nil];
+            [self performSelector:@selector(sendSearchRequest) withObject:nil afterDelay:1.0];
+            
+        }
+        else {
+            filteredPhotos = flickrPhotos;
+        }
+        
+        [self.tableView reloadData];
     }
-}
-
-
-- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
- 
-    self.searchText = [searchText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    self.resetSearch = YES;
-    // to limit network activity, reload half a second after last key press.
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(sendSearchRequest) object:nil];
-    [self performSelector:@selector(sendSearchRequest) withObject:nil afterDelay:0.5];
 }
 
 
@@ -185,13 +193,13 @@ NSMutableArray * filteredPhotos;
 
 - (void)onFetchingPhotosSuccess:(NSMutableArray *)photos {
     
-    if (self.searchActive) {
-        if( self.resetSearch) {
+    if ([self isFiltering]) {
+        if( self.resetFilteredPhotos) {
             filteredPhotos = photos;
         }else{
             [filteredPhotos addObjectsFromArray: [NSArray arrayWithArray:photos]];
         }
-        self.resetSearch = NO;
+        self.resetFilteredPhotos = NO;
     }else{
         [flickrPhotos addObjectsFromArray: [NSArray arrayWithArray:photos]];
     }
