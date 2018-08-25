@@ -56,7 +56,10 @@ NSMutableArray * filteredPhotos;
     self.searchController.searchResultsUpdater = self;
     self.searchController.dimsBackgroundDuringPresentation = NO;
     self.searchController.searchBar.delegate = self;
-    self.tableView.tableHeaderView = self.searchController.searchBar;
+    self.navigationItem.searchController = self.searchController;
+    self.searchController.obscuresBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.placeholder = @"Search Photos";
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
     self.definesPresentationContext = YES;
     [self.searchController.searchBar sizeToFit];
 }
